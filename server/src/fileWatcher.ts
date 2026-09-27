@@ -44,6 +44,7 @@ import {
 } from './constants.js';
 import { seedContextUsage } from './contextUsage.js';
 import type { DismissalTracker } from './dismissalTracker.js';
+import { shouldShowSession } from './liveSessions.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { pathsMatch } from './pathKey.js';
 import type { SubagentWatch } from './subagentWatch.js';
@@ -1381,6 +1382,9 @@ export function scanExternalDir(
     // isDismissed() handles the 3-minute cooldown and auto-expires old entries.
     if (dismissalTracker!.isDismissed(file)) continue;
 
+    // Skip sessions that have ended or run outside the --only folder.
+    if (!shouldShowSession(file)) continue;
+
     // Check if already tracked by an agent (normalize paths for comparison).
     // This prevents the external scanner from adopting /clear files (already
     // reassigned to a terminal agent) while allowing untracked files through.
@@ -1532,6 +1536,8 @@ function scanGlobalProjectDirs(
       } catch {
         continue;
       }
+      // Recently written is not the same as running: skip ended sessions.
+      if (!shouldShowSession(file)) continue;
 
       const folderName =
         folderNameResolver?.({ projectDir: dirPath }) ??
@@ -1566,12 +1572,20 @@ export function startStaleExternalAgentCheck(
   hooksEnabledRef?: { current: boolean },
 ): ReturnType<typeof setInterval> {
   return setInterval(() => {
-    // When hooks are active, SessionEnd handles agent cleanup.
-    if (hooksEnabledRef?.current) return;
     const toRemove: number[] = [];
 
     for (const [id, agent] of agents) {
       if (!agent.isExternal) continue;
+
+      // A session that was killed never sends SessionEnd, so hooks alone can
+      // leave it in the office. Drop it once it's no longer running.
+      if (!shouldShowSession(agent.jsonlFile)) {
+        toRemove.push(id);
+        continue;
+      }
+
+      // When hooks are active, SessionEnd handles the rest of the cleanup.
+      if (hooksEnabledRef?.current) continue;
 
       // Only despawn if the JSONL file has been deleted from disk.
       // Inactive external agents stay alive so they can resume when

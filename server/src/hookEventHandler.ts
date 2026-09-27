@@ -3,6 +3,7 @@ import * as path from 'path';
 import type { AgentEvent, HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { SESSION_END_GRACE_MS } from './constants.js';
+import { shouldShowSessionId } from './liveSessions.js';
 import type { SessionRouter } from './sessionRouter.js';
 import { getInlineTeammates, hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -266,6 +267,10 @@ export class HookEventHandler {
 
     // If a confirmation event arrives for a pending external session, create the agent first
     const pending = this.sessionRouter.confirmPending(event.session_id);
+    if (pending && !shouldShowSessionId(pending.sessionId)) {
+      // Ended, or outside the --only folder: don't give it a character.
+      return;
+    }
     if (pending) {
       if (debug)
         console.log(
