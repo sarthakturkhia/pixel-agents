@@ -184,6 +184,10 @@ export interface Character {
   currentTool: string | null;
   /** Tile in the Founder area the character stands on while talking to the user, or null */
   talkTarget: { col: number; row: number } | null;
+  /** toolId of the voice call in progress, or null when not talking right now */
+  talkToolId: string | null;
+  /** Seconds left before a character that stopped talking leaves the Founder area */
+  talkLingerSec: number;
   /** Palette index (0-5) */
   palette: number;
   /** Hue shift in degrees (0 = no shift, ≥45 for repeated palettes) */

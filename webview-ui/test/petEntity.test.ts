@@ -68,6 +68,8 @@ function makeChar(id: number, col: number, row: number): Character {
     moveProgress: 0,
     currentTool: null,
     talkTarget: null,
+    talkToolId: null,
+    talkLingerSec: 0,
     palette: 0,
     hueShift: 0,
     frame: 0,

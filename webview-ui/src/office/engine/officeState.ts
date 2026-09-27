@@ -14,6 +14,7 @@ import {
   MAX_PET_ID_LENGTH,
   PET_HIT_HALF_WIDTH,
   PET_HIT_HEIGHT,
+  TALK_LINGER_SEC,
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
@@ -84,6 +85,10 @@ export class OfficeState {
    * `findFreeSeat()` to bias new agents toward seats inside their folder's Area.
    */
   areaMappings: Record<string, string[]> = {};
+
+  /** Wander tiles per home Area label, rebuilt when walkableTiles changes. */
+  private wanderCache = new Map<string, Array<{ col: number; row: number }>>();
+  private wanderCacheSource: Array<{ col: number; row: number }> | null = null;
 
   /**
    * The first-run consent greeter, deliberately NOT in `characters`.
@@ -821,8 +826,7 @@ export class OfficeState {
       }
       if (!active && wasTalking) {
         // Turn over: leave the Founder area and head back to the desk.
-        ch.talkTarget = null;
-        this.sendToSeat(id);
+        this.leaveFounderArea(ch);
       }
       this.rebuildFurnitureInstances();
     }
@@ -896,25 +900,82 @@ export class OfficeState {
     this.furniture = layoutToFurnitureInstances(modifiedFurniture);
   }
 
-  setAgentTool(id: number, tool: string | null): void {
+  setAgentTool(id: number, tool: string | null, toolId?: string): void {
     const ch = this.characters.get(id);
     if (!ch) return;
     ch.currentTool = tool;
     if (ch.isSubagent || tool === null) return;
-    // Talking to the user: walk to the Founder area and stay there between
-    // replies. Any other tool means back to the desk to work.
     if (isVoiceToolName(tool)) {
-      if (!ch.talkTarget) {
-        const spot = this.findFreeTileInArea(FOUNDER_AREA_LABEL, ch);
-        if (spot) {
-          ch.talkTarget = spot;
-          this.walkToTile(id, spot.col, spot.row);
-        }
-      }
+      this.startTalking(ch, toolId ?? tool);
     } else if (ch.talkTarget) {
-      ch.talkTarget = null;
-      this.sendToSeat(id);
+      // Back to other work: head straight back to the desk.
+      this.leaveFounderArea(ch);
     }
+  }
+
+  /** A tool finished. If it was the voice call, the character stops talking. */
+  agentToolDone(id: number, toolId: string): void {
+    const ch = this.characters.get(id);
+    if (!ch || ch.talkToolId !== toolId) return;
+    ch.talkToolId = null;
+    // Linger briefly: agents often speak again right after listening.
+    ch.talkLingerSec = TALK_LINGER_SEC;
+  }
+
+  /** Is this character in a voice call with the user right now? */
+  isTalking(id: number): boolean {
+    return this.characters.get(id)?.talkToolId != null;
+  }
+
+  /** Walk to the Founder area to talk. Only one character talks at a time. */
+  private startTalking(ch: Character, toolId: string): void {
+    for (const other of this.characters.values()) {
+      if (other !== ch && other.talkTarget) this.leaveFounderArea(other);
+    }
+    ch.talkToolId = toolId;
+    ch.talkLingerSec = 0;
+    if (ch.talkTarget) return;
+    const spot = this.findFreeTileInArea(FOUNDER_AREA_LABEL, ch);
+    if (spot) {
+      ch.talkTarget = spot;
+      this.walkToTile(ch.id, spot.col, spot.row);
+    }
+  }
+
+  private leaveFounderArea(ch: Character): void {
+    ch.talkToolId = null;
+    ch.talkLingerSec = 0;
+    if (!ch.talkTarget) return;
+    ch.talkTarget = null;
+    this.sendToSeat(ch.id);
+  }
+
+  /**
+   * Tiles a character may wander to: anywhere outside an Area (corridors), plus
+   * its own seat's Area. Keeps agents out of each other's offices and out of
+   * the Founder and Helpers areas unless they belong there. Layouts without
+   * Areas are unaffected.
+   */
+  private wanderTilesFor(ch: Character): Array<{ col: number; row: number }> {
+    const areaTiles = this.layout.areaTiles;
+    if (!areaTiles || areaTiles.length === 0) return this.walkableTiles;
+    const home = ch.seatId ? this.seatZone(ch.seatId) : null;
+    const key = home ?? '';
+    if (this.wanderCacheSource !== this.walkableTiles) {
+      this.wanderCache.clear();
+      this.wanderCacheSource = this.walkableTiles;
+    }
+    let tiles = this.wanderCache.get(key);
+    if (!tiles) {
+      const cols = this.layout.cols;
+      tiles = this.walkableTiles.filter((t) => {
+        const label = areaTiles[t.row * cols + t.col] ?? null;
+        return label === null || label === home;
+      });
+      if (tiles.length === 0) tiles = this.walkableTiles;
+      this.wanderCache.set(key, tiles);
+    }
+    return tiles;
   }
 
   /**
@@ -1161,6 +1222,12 @@ export class OfficeState {
   }
 
   update(dt: number): void {
+    for (const ch of this.characters.values()) {
+      if (ch.talkTarget && ch.talkToolId === null && ch.talkLingerSec > 0) {
+        ch.talkLingerSec -= dt;
+        if (ch.talkLingerSec <= 0) this.leaveFounderArea(ch);
+      }
+    }
     // Furniture animation cycling
     const prevFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
     this.furnitureAnimTimer += dt;
@@ -1185,7 +1252,14 @@ export class OfficeState {
 
       // Temporarily unblock own seat so character can pathfind to it
       this.withOwnSeatUnblocked(ch, () =>
-        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles),
+        updateCharacter(
+          ch,
+          dt,
+          this.wanderTilesFor(ch),
+          this.seats,
+          this.tileMap,
+          this.blockedTiles,
+        ),
       );
 
       // Tick bubble timer for waiting bubbles

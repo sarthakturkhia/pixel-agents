@@ -9,6 +9,10 @@ export const MAX_ROWS = 64;
 
 // ── Character Animation ─────────────────────────────────────
 export const WALK_SPEED_PX_PER_SEC = 48;
+/** Walk speed multiplier on the way to the Founder area to talk */
+export const TALK_WALK_SPEED_MULTIPLIER = 4;
+/** How long a character stays in the Founder area after a voice call ends, in case it speaks again */
+export const TALK_LINGER_SEC = 4;
 export const WALK_FRAME_DURATION_SEC = 0.15;
 export const TYPE_FRAME_DURATION_SEC = 0.3;
 export const WANDER_PAUSE_MIN_SEC = 2.0;

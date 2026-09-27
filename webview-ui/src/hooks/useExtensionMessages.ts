@@ -371,7 +371,7 @@ export function useExtensionMessages(
           };
         });
         const toolName = (msg.toolName as string | undefined) ?? extractToolName(status);
-        os.setAgentTool(id, toolName);
+        os.setAgentTool(id, toolName, toolId);
         os.setAgentActive(id, true);
         // Don't clear the permission bubble if the hook already confirmed permission is needed
         if (!permissionActive) {
@@ -410,6 +410,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentToolDone') {
         const id = msg.id as number;
         const toolId = msg.toolId as string;
+        os.agentToolDone(id, toolId);
         setAgentTools((prev) => {
           const list = prev[id];
           if (!list) return prev;

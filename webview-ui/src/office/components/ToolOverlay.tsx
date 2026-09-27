@@ -23,6 +23,9 @@ import { overlayProjection } from '../projection.js';
 import type { ToolActivity } from '../types.js';
 import { CharacterState } from '../types.js';
 
+/** Status text the server sends for VoiceMode's converse tool. */
+const TALKING_ACTIVITY_TEXT = '\u{1F399}\uFE0F Talking';
+
 // Both turn-end states show the green checkmark bubble. A finished turn (Stop)
 // shows ONLY the checkmark (the label falls through to its normal idle text);
 // going idle waiting on the user (Notification(idle_prompt)) additionally
@@ -49,7 +52,9 @@ function getActivityText(
   isActive: boolean,
   bubbleType: 'permission' | 'waiting' | null,
   waitingAwaitingInput: boolean,
+  isTalking: boolean,
 ): string {
+  if (isTalking) return TALKING_ACTIVITY_TEXT;
   if (bubbleType === 'permission') return 'Needs approval';
   // Only the idle case ("Waiting for input") gets a dedicated label. A finished
   // turn (Stop, waitingAwaitingInput=false) falls through so the checkmark alone
@@ -64,10 +69,11 @@ function getActivityText(
       if (activeTool.permissionWait) return 'Needs approval';
       return activeTool.status;
     }
-    // All tools done but agent still active (mid-turn) — keep showing last tool status
+    // All tools done but agent still active (mid-turn) — keep showing last tool
+    // status, except a finished voice call: it isn't talking any more.
     if (isActive) {
       const lastTool = tools[tools.length - 1];
-      if (lastTool) return lastTool.status;
+      if (lastTool && lastTool.status !== TALKING_ACTIVITY_TEXT) return lastTool.status;
     }
   }
 
@@ -130,8 +136,10 @@ export function ToolOverlay({
         const isHovered = hoveredId === id;
         const isSub = ch.isSubagent;
 
-        // Only show for hovered or selected agents (unless always-show is on)
-        if (!alwaysShowOverlay && !isSelected && !isHovered) return null;
+        // Only show for hovered or selected agents (unless always-show is on).
+        // Whoever is talking to the user always shows it.
+        const isTalking = officeState.isTalking(id);
+        if (!alwaysShowOverlay && !isSelected && !isHovered && !isTalking) return null;
 
         // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
@@ -184,6 +192,7 @@ export function ToolOverlay({
             ch.isActive,
             ch.bubbleType,
             ch.waitingAwaitingInput ?? false,
+            isTalking,
           );
         }
 
@@ -219,7 +228,12 @@ export function ToolOverlay({
               left: screenX,
               top: screenY - (hasExtraLines ? 34 : 28),
               pointerEvents: isSelected ? 'auto' : 'none',
-              opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
+              opacity:
+                alwaysShowOverlay && !isSelected && !isHovered && !isTalking
+                  ? isSub
+                    ? 0.5
+                    : 0.75
+                  : 1,
               zIndex: isSelected ? 42 : 41,
             }}
             data-testid="agent-overlay"

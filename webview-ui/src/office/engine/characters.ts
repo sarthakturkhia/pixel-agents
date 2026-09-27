@@ -2,6 +2,7 @@ import {
   DEFAULT_MAX_CONTEXT_TOKENS,
   SEAT_REST_MAX_SEC,
   SEAT_REST_MIN_SEC,
+  TALK_WALK_SPEED_MULTIPLIER,
   TYPE_FRAME_DURATION_SEC,
   WALK_FRAME_DURATION_SEC,
   WALK_SPEED_PX_PER_SEC,
@@ -68,6 +69,8 @@ export function createCharacter(
     moveProgress: 0,
     currentTool: null,
     talkTarget: null,
+    talkToolId: null,
+    talkLingerSec: 0,
     palette,
     hueShift,
     frame: 0,
@@ -284,7 +287,9 @@ export function updateCharacter(
       const nextTile = ch.path[0];
       ch.dir = directionBetween(ch.tileCol, ch.tileRow, nextTile.col, nextTile.row);
 
-      ch.moveProgress += (WALK_SPEED_PX_PER_SEC / TILE_SIZE) * dt;
+      // Hurry to the Founder area so the character arrives as it starts speaking.
+      const speed = WALK_SPEED_PX_PER_SEC * (ch.talkTarget ? TALK_WALK_SPEED_MULTIPLIER : 1);
+      ch.moveProgress += (speed / TILE_SIZE) * dt;
 
       const fromCenter = tileCenter(ch.tileCol, ch.tileRow);
       const toCenter = tileCenter(nextTile.col, nextTile.row);
