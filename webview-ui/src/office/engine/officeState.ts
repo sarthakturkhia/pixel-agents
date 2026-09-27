@@ -54,6 +54,8 @@ function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } 
 
 /** Area label (any case) where characters stand while talking to the user. */
 const FOUNDER_AREA_LABEL = 'founder';
+/** Area label (any case) for sub-agents and sessions whose folder has no Area of its own. */
+const HELPERS_AREA_LABEL = 'helpers';
 
 export class OfficeState {
   layout: OfficeLayout;
@@ -382,6 +384,15 @@ export class OfficeState {
       if (pick) return pick;
     }
 
+    // Stage 1b — a folder without an Area of its own sits in the Helpers area.
+    if (folderName && !(areaLabels && areaLabels.length > 0)) {
+      const helperSeats = freeSeats.filter(
+        (uid) => this.seatZone(uid)?.toLowerCase() === HELPERS_AREA_LABEL,
+      );
+      const pick = this.pickFromSeats(helperSeats, electronicsTiles);
+      if (pick) return pick;
+    }
+
     // Stage 2 — unzoned seats (no area label, or layout has no areas at all).
     const unzoned = freeSeats.filter((uid) => this.seatZone(uid) === null);
     const pick2 = this.pickFromSeats(unzoned, electronicsTiles);
@@ -705,7 +716,11 @@ export class OfficeState {
     const parentRow = parentCh ? parentCh.tileRow : 0;
     let spawn = { col: parentCol, row: parentRow };
     if (this.walkableTiles.length > 0) {
-      spawn = this.closestFreeWalkableTile(parentCol, parentRow) ?? this.walkableTiles[0];
+      // Sub-agents gather in the shared Helpers area when the layout has one.
+      spawn =
+        this.findFreeTileInArea(HELPERS_AREA_LABEL) ??
+        this.closestFreeWalkableTile(parentCol, parentRow) ??
+        this.walkableTiles[0];
     }
 
     const ch = createCharacter(id, palette, null, null, hueShift);
@@ -890,7 +905,7 @@ export class OfficeState {
     // replies. Any other tool means back to the desk to work.
     if (isVoiceToolName(tool)) {
       if (!ch.talkTarget) {
-        const spot = this.findFounderSpot(ch);
+        const spot = this.findFreeTileInArea(FOUNDER_AREA_LABEL, ch);
         if (spot) {
           ch.talkTarget = spot;
           this.walkToTile(id, spot.col, spot.row);
@@ -903,16 +918,17 @@ export class OfficeState {
   }
 
   /**
-   * Free walkable tile in the Area labelled "Founder" (any case), closest to
-   * the area's centre, for a character about to talk to the user. Null when the
-   * layout has no Founder area or every tile in it is taken.
+   * Free walkable tile in the Area with this label (any case), closest to the
+   * area's centre: where a talking character stands in the Founder area, or
+   * where a sub-agent appears in the Helpers area. Null when the layout has no
+   * such area or every tile in it is taken.
    */
-  private findFounderSpot(ch: Character): { col: number; row: number } | null {
+  private findFreeTileInArea(label: string, ch?: Character): { col: number; row: number } | null {
     const areaTiles = this.layout.areaTiles;
     if (!areaTiles || areaTiles.length === 0) return null;
     const cols = this.layout.cols;
     const inArea = this.walkableTiles.filter(
-      (t) => areaTiles[t.row * cols + t.col]?.toLowerCase() === FOUNDER_AREA_LABEL,
+      (t) => areaTiles[t.row * cols + t.col]?.toLowerCase() === label,
     );
     if (inArea.length === 0) return null;
     const taken = new Set<string>();
