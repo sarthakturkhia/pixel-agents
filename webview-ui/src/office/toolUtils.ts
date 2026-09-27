@@ -9,6 +9,7 @@ const STATUS_TO_TOOL: Record<string, string> = {
   Editing: 'Edit',
   Running: 'Bash',
   Task: 'Task',
+  '\u{1F399}\uFE0F Talking': 'mcp__plugin_voicemode_voicemode__converse',
 };
 
 export function extractToolName(status: string): string | null {
@@ -38,6 +39,13 @@ export function setProviderCapabilities(caps: {
 }): void {
   providerCaps.readingTools = new Set(caps.readingTools);
   providerCaps.subagentToolNames = new Set(caps.subagentToolNames);
+}
+
+/** VoiceMode's converse tool (plugin or plain MCP install): the agent is talking to the user. */
+const VOICE_TOOL_NAME = /^mcp__(plugin_voicemode_)?voicemode__converse$/;
+
+export function isVoiceToolName(name: string | null | undefined): boolean {
+  return typeof name === 'string' && VOICE_TOOL_NAME.test(name);
 }
 
 export function isReadingToolName(name: string | null | undefined): boolean {

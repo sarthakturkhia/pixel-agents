@@ -24,9 +24,14 @@ import {
 
 // ── formatToolStatus: moved from src/transcriptParser.ts ──
 
+/** VoiceMode's converse tool (plugin or plain MCP install): the agent is talking to the user. */
+const VOICE_TOOL_NAME = /^mcp__(plugin_voicemode_)?voicemode__converse$/;
+const VOICE_TOOL_STATUS = '\u{1F399}\uFE0F Talking';
+
 export function formatToolStatus(toolName: string, input?: unknown): string {
   const inp = (input ?? {}) as Record<string, unknown>;
   const base = (p: unknown) => (typeof p === 'string' ? path.basename(p) : '');
+  if (VOICE_TOOL_NAME.test(toolName)) return VOICE_TOOL_STATUS;
   switch (toolName) {
     case 'Read':
       return `Reading ${base(inp.file_path)}`;

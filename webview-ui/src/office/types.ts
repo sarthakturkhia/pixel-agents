@@ -182,6 +182,8 @@ export interface Character {
   moveProgress: number;
   /** Current tool name for typing vs reading animation, or null */
   currentTool: string | null;
+  /** Tile in the Founder area the character stands on while talking to the user, or null */
+  talkTarget: { col: number; row: number } | null;
   /** Palette index (0-5) */
   palette: number;
   /** Hue shift in degrees (0 = no shift, ≥45 for repeated palettes) */

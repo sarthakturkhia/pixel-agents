@@ -27,6 +27,7 @@ import {
 import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
 import { getPetCount, getPetName } from '../sprites/petSpriteData.js';
 import { getLoadedCharacterCount } from '../sprites/spriteData.js';
+import { isVoiceToolName } from '../toolUtils.js';
 import type {
   Character,
   FurnitureInstance,
@@ -50,6 +51,9 @@ function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } 
   if (direction === Direction.DOWN) return { dCol: 0, dRow: 1 };
   return { dCol: 0, dRow: -1 };
 }
+
+/** Area label (any case) where characters stand while talking to the user. */
+const FOUNDER_AREA_LABEL = 'founder';
 
 export class OfficeState {
   layout: OfficeLayout;
@@ -792,12 +796,18 @@ export class OfficeState {
     const ch = this.characters.get(id);
     if (ch) {
       ch.isActive = active;
+      const wasTalking = ch.talkTarget !== null;
       if (!active) {
         // Sentinel -1: signals turn just ended, skip next seat rest timer.
         // Prevents the WALK handler from setting a 2-4 min rest on arrival.
         ch.seatTimer = -1;
         ch.path = [];
         ch.moveProgress = 0;
+      }
+      if (!active && wasTalking) {
+        // Turn over: leave the Founder area and head back to the desk.
+        ch.talkTarget = null;
+        this.sendToSeat(id);
       }
       this.rebuildFurnitureInstances();
     }
@@ -873,9 +883,57 @@ export class OfficeState {
 
   setAgentTool(id: number, tool: string | null): void {
     const ch = this.characters.get(id);
-    if (ch) {
-      ch.currentTool = tool;
+    if (!ch) return;
+    ch.currentTool = tool;
+    if (ch.isSubagent || tool === null) return;
+    // Talking to the user: walk to the Founder area and stay there between
+    // replies. Any other tool means back to the desk to work.
+    if (isVoiceToolName(tool)) {
+      if (!ch.talkTarget) {
+        const spot = this.findFounderSpot(ch);
+        if (spot) {
+          ch.talkTarget = spot;
+          this.walkToTile(id, spot.col, spot.row);
+        }
+      }
+    } else if (ch.talkTarget) {
+      ch.talkTarget = null;
+      this.sendToSeat(id);
     }
+  }
+
+  /**
+   * Free walkable tile in the Area labelled "Founder" (any case), closest to
+   * the area's centre, for a character about to talk to the user. Null when the
+   * layout has no Founder area or every tile in it is taken.
+   */
+  private findFounderSpot(ch: Character): { col: number; row: number } | null {
+    const areaTiles = this.layout.areaTiles;
+    if (!areaTiles || areaTiles.length === 0) return null;
+    const cols = this.layout.cols;
+    const inArea = this.walkableTiles.filter(
+      (t) => areaTiles[t.row * cols + t.col]?.toLowerCase() === FOUNDER_AREA_LABEL,
+    );
+    if (inArea.length === 0) return null;
+    const taken = new Set<string>();
+    for (const other of this.characters.values()) {
+      if (other === ch) continue;
+      taken.add(`${other.tileCol},${other.tileRow}`);
+      if (other.talkTarget) taken.add(`${other.talkTarget.col},${other.talkTarget.row}`);
+    }
+    const centerCol = inArea.reduce((sum, t) => sum + t.col, 0) / inArea.length;
+    const centerRow = inArea.reduce((sum, t) => sum + t.row, 0) / inArea.length;
+    let best: { col: number; row: number } | null = null;
+    let bestDist = Infinity;
+    for (const t of inArea) {
+      if (taken.has(`${t.col},${t.row}`)) continue;
+      const d = Math.abs(t.col - centerCol) + Math.abs(t.row - centerRow);
+      if (d < bestDist) {
+        best = t;
+        bestDist = d;
+      }
+    }
+    return best;
   }
 
   showPermissionBubble(id: number): void {

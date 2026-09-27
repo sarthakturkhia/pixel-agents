@@ -67,6 +67,7 @@ export function createCharacter(
     path: [],
     moveProgress: 0,
     currentTool: null,
+    talkTarget: null,
     palette,
     hueShift,
     frame: 0,
@@ -87,6 +88,19 @@ export function createCharacter(
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };
+}
+
+/**
+ * Where an active character belongs: its spot in the Founder area while talking,
+ * otherwise its seat. Null when it has neither (it types in place).
+ */
+function activeTarget(
+  ch: Character,
+  seats: Map<string, Seat>,
+): { col: number; row: number; dir: Direction } | null {
+  if (ch.talkTarget) return { ...ch.talkTarget, dir: Direction.DOWN };
+  const seat = ch.seatId ? seats.get(ch.seatId) : undefined;
+  return seat ? { col: seat.seatCol, row: seat.seatRow, dir: seat.facingDir } : null;
 }
 
 export function updateCharacter(
@@ -126,38 +140,38 @@ export function updateCharacter(
       // No idle animation — static pose
       ch.frame = 0;
       if (ch.seatTimer < 0) ch.seatTimer = 0; // clear turn-end sentinel
-      // If became active, pathfind to seat
+      // If became active, pathfind to seat (or to the Founder area while talking)
       if (ch.isActive) {
-        if (!ch.seatId) {
-          // No seat assigned — type in place
-          ch.state = CharacterState.TYPE;
-          ch.frame = 0;
-          ch.frameTimer = 0;
-          break;
-        }
-        const seat = seats.get(ch.seatId);
-        if (seat) {
-          const path = findPath(
-            ch.tileCol,
-            ch.tileRow,
-            seat.seatCol,
-            seat.seatRow,
-            tileMap,
-            blockedTiles,
-          );
-          if (path.length > 0) {
-            ch.path = path;
-            ch.moveProgress = 0;
-            ch.state = CharacterState.WALK;
-            ch.frame = 0;
-            ch.frameTimer = 0;
-          } else {
-            // Already at seat or no path — sit down
+        const target = activeTarget(ch, seats);
+        if (!target) {
+          if (!ch.seatId) {
+            // No seat assigned — type in place
             ch.state = CharacterState.TYPE;
-            ch.dir = seat.facingDir;
             ch.frame = 0;
             ch.frameTimer = 0;
           }
+          break;
+        }
+        const path = findPath(
+          ch.tileCol,
+          ch.tileRow,
+          target.col,
+          target.row,
+          tileMap,
+          blockedTiles,
+        );
+        if (path.length > 0) {
+          ch.path = path;
+          ch.moveProgress = 0;
+          ch.state = CharacterState.WALK;
+          ch.frame = 0;
+          ch.frameTimer = 0;
+        } else {
+          // Already there or no path — sit down (or stand and talk)
+          ch.state = CharacterState.TYPE;
+          ch.dir = target.dir;
+          ch.frame = 0;
+          ch.frameTimer = 0;
         }
         break;
       }
@@ -224,17 +238,15 @@ export function updateCharacter(
         ch.y = center.y;
 
         if (ch.isActive) {
-          if (!ch.seatId) {
+          const target = activeTarget(ch, seats);
+          if (!ch.seatId && !target) {
             // No seat — type in place
             ch.state = CharacterState.TYPE;
+          } else if (target && ch.tileCol === target.col && ch.tileRow === target.row) {
+            ch.state = CharacterState.TYPE;
+            ch.dir = target.dir;
           } else {
-            const seat = seats.get(ch.seatId);
-            if (seat && ch.tileCol === seat.seatCol && ch.tileRow === seat.seatRow) {
-              ch.state = CharacterState.TYPE;
-              ch.dir = seat.facingDir;
-            } else {
-              ch.state = CharacterState.IDLE;
-            }
+            ch.state = CharacterState.IDLE;
           }
         } else {
           // Check if arrived at assigned seat — sit down for a rest before wandering again
@@ -290,17 +302,17 @@ export function updateCharacter(
         ch.moveProgress = 0;
       }
 
-      // If became active while wandering, repath to seat
-      if (ch.isActive && ch.seatId) {
-        const seat = seats.get(ch.seatId);
-        if (seat) {
+      // If became active while wandering, repath to seat (or to the Founder area while talking)
+      if (ch.isActive) {
+        const target = activeTarget(ch, seats);
+        if (target) {
           const lastStep = ch.path[ch.path.length - 1];
-          if (!lastStep || lastStep.col !== seat.seatCol || lastStep.row !== seat.seatRow) {
+          if (!lastStep || lastStep.col !== target.col || lastStep.row !== target.row) {
             const newPath = findPath(
               ch.tileCol,
               ch.tileRow,
-              seat.seatCol,
-              seat.seatRow,
+              target.col,
+              target.row,
               tileMap,
               blockedTiles,
             );
