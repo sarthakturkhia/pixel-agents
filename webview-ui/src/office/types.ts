@@ -188,6 +188,9 @@ export interface Character {
   talkToolId: string | null;
   /** Seconds left before a character that stopped talking leaves the Founder area */
   talkLingerSec: number;
+  /** Seconds left in a visit to another agent's room after messaging it (0 = not visiting).
+   *  While visiting, talkTarget holds the spot at the edge of that room. */
+  visitSec: number;
   /** Palette index (0-5) */
   palette: number;
   /** Hue shift in degrees (0 = no shift, ≥45 for repeated palettes) */

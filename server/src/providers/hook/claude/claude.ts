@@ -43,6 +43,11 @@ export function formatToolStatus(toolName: string, input?: unknown): string {
       const cmd = (inp.command as string) || '';
       return `Running: ${cmd.length > BASH_COMMAND_DISPLAY_MAX_LENGTH ? cmd.slice(0, BASH_COMMAND_DISPLAY_MAX_LENGTH) + '\u2026' : cmd}`;
     }
+    case 'SendMessage': {
+      // The office walks the sender over to the recipient's room (see OfficeState.visitAgent).
+      const to = typeof inp.to === 'string' ? inp.to : '';
+      return to ? `Messaging ${to}` : 'Messaging';
+    }
     case 'Glob':
       return 'Searching files';
     case 'Grep':

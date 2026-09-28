@@ -13,6 +13,8 @@ export const WALK_SPEED_PX_PER_SEC = 48;
 export const TALK_WALK_SPEED_MULTIPLIER = 4;
 /** How long a character stays in the Founder area after a voice call ends, in case it speaks again */
 export const TALK_LINGER_SEC = 4;
+/** Seconds a visit to another agent's room lasts, walk there included; then back to the desk. */
+export const VISIT_STAY_SEC = 14;
 export const WALK_FRAME_DURATION_SEC = 0.15;
 export const TYPE_FRAME_DURATION_SEC = 0.3;
 export const WANDER_PAUSE_MIN_SEC = 2.0;

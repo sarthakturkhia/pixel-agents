@@ -372,6 +372,9 @@ export function useExtensionMessages(
         });
         const toolName = (msg.toolName as string | undefined) ?? extractToolName(status);
         os.setAgentTool(id, toolName, toolId);
+        if (toolName === 'SendMessage' && status.startsWith('Messaging ')) {
+          os.visitAgent(id, status.slice('Messaging '.length));
+        }
         os.setAgentActive(id, true);
         // Don't clear the permission bubble if the hook already confirmed permission is needed
         if (!permissionActive) {

@@ -69,6 +69,7 @@ export function createCharacter(
     moveProgress: 0,
     currentTool: null,
     talkTarget: null,
+    visitSec: 0,
     talkToolId: null,
     talkLingerSec: 0,
     palette,

@@ -15,6 +15,7 @@ import {
   PET_HIT_HALF_WIDTH,
   PET_HIT_HEIGHT,
   TALK_LINGER_SEC,
+  VISIT_STAY_SEC,
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
@@ -907,8 +908,8 @@ export class OfficeState {
     if (ch.isSubagent || tool === null) return;
     if (isVoiceToolName(tool)) {
       this.startTalking(ch, toolId ?? tool);
-    } else if (ch.talkTarget) {
-      // Back to other work: head straight back to the desk.
+    } else if (ch.talkTarget && ch.visitSec <= 0) {
+      // Back to other work: head straight back to the desk. (A visit plays out on its own timer.)
       this.leaveFounderArea(ch);
     }
   }
@@ -930,7 +931,12 @@ export class OfficeState {
   /** Walk to the Founder area to talk. Only one character talks at a time. */
   private startTalking(ch: Character, toolId: string): void {
     for (const other of this.characters.values()) {
-      if (other !== ch && other.talkTarget) this.leaveFounderArea(other);
+      if (other !== ch && other.talkTarget && other.visitSec <= 0) this.leaveFounderArea(other);
+    }
+    if (ch.visitSec > 0) {
+      // Talking to the user beats a visit: go to the Founder area instead.
+      ch.visitSec = 0;
+      ch.talkTarget = null;
     }
     ch.talkToolId = toolId;
     ch.talkLingerSec = 0;
@@ -945,9 +951,83 @@ export class OfficeState {
   private leaveFounderArea(ch: Character): void {
     ch.talkToolId = null;
     ch.talkLingerSec = 0;
+    ch.visitSec = 0;
     if (!ch.talkTarget) return;
     ch.talkTarget = null;
     this.sendToSeat(ch.id);
+  }
+
+  /**
+   * The agent messaged another session (`to` is its name, e.g. "marketing-33"):
+   * walk over to the nearest edge of that session's room, stand there for a
+   * moment, then go back to the desk. Agents talk in person, not by telepathy.
+   * The room comes from the folder in the name (areaMappings). No-op when the
+   * recipient has no room, or while the character is talking to the user.
+   */
+  visitAgent(id: number, to: string): void {
+    const ch = this.characters.get(id);
+    if (!ch || ch.isSubagent || ch.talkToolId !== null) return;
+    const folder = to
+      .trim()
+      .replace(/-[^-]*$/, '')
+      .toLowerCase();
+    if (!folder) return;
+    const labels = (this.areaMappings[folder] ?? [folder]).map((l) => l.toLowerCase());
+    const home = ch.seatId ? this.seatZone(ch.seatId) : null;
+    if (home && labels.includes(home.toLowerCase())) return; // already in that room
+    const spot = this.findEdgeTileInAreas(labels, ch);
+    if (!spot) return;
+    ch.talkTarget = spot;
+    ch.visitSec = VISIT_STAY_SEC;
+    if (!this.walkToTile(ch.id, spot.col, spot.row)) {
+      ch.talkTarget = null;
+      ch.visitSec = 0;
+    }
+  }
+
+  /**
+   * Free walkable tile just inside one of these Areas, on its boundary (next
+   * to a walkable tile outside it, like a doorway), nearest to the character.
+   */
+  private findEdgeTileInAreas(
+    labels: string[],
+    ch: Character,
+  ): { col: number; row: number } | null {
+    const areaTiles = this.layout.areaTiles;
+    if (!areaTiles || areaTiles.length === 0) return null;
+    const cols = this.layout.cols;
+    const labelAt = (col: number, row: number) =>
+      areaTiles[row * cols + col]?.toLowerCase() ?? null;
+    const walkable = new Set(this.walkableTiles.map((t) => `${t.col},${t.row}`));
+    const taken = new Set<string>();
+    for (const other of this.characters.values()) {
+      if (other === ch) continue;
+      taken.add(`${other.tileCol},${other.tileRow}`);
+      if (other.talkTarget) taken.add(`${other.talkTarget.col},${other.talkTarget.row}`);
+    }
+    let best: { col: number; row: number } | null = null;
+    let bestDist = Infinity;
+    for (const t of this.walkableTiles) {
+      const label = labelAt(t.col, t.row);
+      if (!label || !labels.includes(label) || taken.has(`${t.col},${t.row}`)) continue;
+      const onEdge = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ].some(([dc, dr]) => {
+        const c = t.col + dc;
+        const r = t.row + dr;
+        return walkable.has(`${c},${r}`) && labelAt(c, r) !== label;
+      });
+      if (!onEdge) continue;
+      const dist = Math.abs(t.col - ch.tileCol) + Math.abs(t.row - ch.tileRow);
+      if (dist < bestDist) {
+        best = t;
+        bestDist = dist;
+      }
+    }
+    return best;
   }
 
   /**
@@ -1254,6 +1334,11 @@ export class OfficeState {
       if (ch.talkTarget && ch.talkToolId === null && ch.talkLingerSec > 0) {
         ch.talkLingerSec -= dt;
         if (ch.talkLingerSec <= 0) this.leaveFounderArea(ch);
+      }
+      // Visits run on a fixed clock (walk + stay), so an idle or blocked character still heads home.
+      if (ch.visitSec > 0) {
+        ch.visitSec -= dt;
+        if (ch.visitSec <= 0) this.leaveFounderArea(ch);
       }
     }
     // Furniture animation cycling

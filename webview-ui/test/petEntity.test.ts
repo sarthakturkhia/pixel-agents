@@ -70,6 +70,7 @@ function makeChar(id: number, col: number, row: number): Character {
     talkTarget: null,
     talkToolId: null,
     talkLingerSec: 0,
+    visitSec: 0,
     palette: 0,
     hueShift: 0,
     frame: 0,
