@@ -951,6 +951,34 @@ export class OfficeState {
   }
 
   /**
+   * Where pets live: the Founder area. They wander only its tiles and follow
+   * only characters standing in it, so a character leaving the room ends the
+   * follow. Layouts without a Founder area keep the whole office.
+   */
+  private petRange(): {
+    tiles: Array<{ col: number; row: number }>;
+    company: Map<number, Character>;
+  } {
+    const areaTiles = this.layout.areaTiles;
+    if (!areaTiles || areaTiles.length === 0)
+      return { tiles: this.walkableTiles, company: this.characters };
+    const cols = this.layout.cols;
+    const inFounder = (col: number, row: number) =>
+      areaTiles[row * cols + col]?.toLowerCase() === FOUNDER_AREA_LABEL;
+    if (this.petTilesSource !== this.walkableTiles) {
+      this.petTiles = this.walkableTiles.filter((t) => inFounder(t.col, t.row));
+      this.petTilesSource = this.walkableTiles;
+    }
+    if (this.petTiles.length === 0) return { tiles: this.walkableTiles, company: this.characters };
+    const company = new Map<number, Character>();
+    for (const [id, ch] of this.characters)
+      if (inFounder(ch.tileCol, ch.tileRow)) company.set(id, ch);
+    return { tiles: this.petTiles, company };
+  }
+  private petTiles: Array<{ col: number; row: number }> = [];
+  private petTilesSource: Array<{ col: number; row: number }> | null = null;
+
+  /**
    * Tiles a character may wander to: anywhere outside an Area (corridors), plus
    * its own seat's Area. Keeps agents out of each other's offices and out of
    * the Founder and Helpers areas unless they belong there. Layouts without
@@ -1277,8 +1305,9 @@ export class OfficeState {
     }
 
     // ── Pet FSM ────────────────────────────────────────────────
+    const { tiles: petTiles, company: petCompany } = this.petRange();
     for (const pet of this.pets) {
-      updatePet(pet, dt, this.walkableTiles, this.characters, this.tileMap, this.blockedTiles);
+      updatePet(pet, dt, petTiles, petCompany, this.tileMap, this.blockedTiles);
 
       // Tick heart bubble timer (mirrors character waiting-bubble pattern)
       if (pet.bubbleType) {
