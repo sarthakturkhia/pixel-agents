@@ -908,7 +908,7 @@ export class OfficeState {
     if (ch.isSubagent || tool === null) return;
     if (isVoiceToolName(tool)) {
       this.startTalking(ch, toolId ?? tool);
-    } else if (ch.talkTarget && ch.visitSec <= 0) {
+    } else if (ch.talkTarget && ch.visitSec <= 0 && !ch.inVoiceLine) {
       // Back to other work: head straight back to the desk. (A visit plays out on its own timer.)
       this.leaveFounderArea(ch);
     }
@@ -925,14 +925,97 @@ export class OfficeState {
 
   /** Is this character in a voice call with the user right now? */
   isTalking(id: number): boolean {
-    return this.characters.get(id)?.talkToolId != null;
+    const ch = this.characters.get(id);
+    return ch?.talkToolId != null && !ch.inVoiceLine;
+  }
+
+  /** Place in line for the voice channel (1 = next), or null when not waiting. */
+  voiceLinePosition(id: number): number | null {
+    return this.voiceWaiting.get(id) ?? null;
+  }
+
+  // VoiceMode's mic, as reported by the server (voiceQueue): who speaks, who waits.
+  private voiceSpeakingId: number | null = null;
+  private voiceWaiting = new Map<number, number>();
+
+  /**
+   * The server reports who holds the voice channel and who is waiting. Waiting
+   * agents (including a desk just woken by its name) line up outside the
+   * Founder area; when one gets the mic it walks in; when it drops out of line
+   * without speaking, it goes back to its desk.
+   */
+  setVoiceQueue(speakingId: number | null, waiting: Array<{ id: number; position: number }>): void {
+    const before = new Set(this.voiceWaiting.keys());
+    this.voiceSpeakingId = speakingId;
+    this.voiceWaiting = new Map(waiting.map((w) => [w.id, w.position]));
+    const spots = this.voiceLineSpots();
+    for (const w of [...waiting].sort((a, b) => a.position - b.position)) {
+      const ch = this.characters.get(w.id);
+      if (!ch || ch.isSubagent) continue;
+      const spot = spots[w.position - 1] ?? spots[spots.length - 1];
+      if (!spot) continue;
+      ch.visitSec = 0;
+      ch.inVoiceLine = true;
+      if (ch.talkTarget && ch.talkTarget.col === spot.col && ch.talkTarget.row === spot.row)
+        continue;
+      ch.talkTarget = spot;
+      this.walkToTile(ch.id, spot.col, spot.row);
+    }
+    for (const id of before) {
+      if (this.voiceWaiting.has(id)) continue;
+      const ch = this.characters.get(id);
+      if (!ch || !ch.inVoiceLine) continue;
+      ch.inVoiceLine = false;
+      if (id === speakingId && ch.talkToolId !== null) {
+        // Its turn: walk into the Founder area.
+        ch.talkTarget = null;
+        this.startTalking(ch, ch.talkToolId);
+      } else if (id !== speakingId) {
+        this.leaveFounderArea(ch);
+      }
+    }
+  }
+
+  /**
+   * Where the line forms: walkable tiles outside every Area (corridor), nearest
+   * the Founder area first, then nearest the middle of its opening. Empty when
+   * the layout has no Founder area.
+   */
+  private voiceLineSpots(): Array<{ col: number; row: number }> {
+    const areaTiles = this.layout.areaTiles;
+    if (!areaTiles || areaTiles.length === 0) return [];
+    const cols = this.layout.cols;
+    const labelAt = (c: number, r: number) => areaTiles[r * cols + c]?.toLowerCase() ?? null;
+    const founder = this.walkableTiles.filter((t) => labelAt(t.col, t.row) === FOUNDER_AREA_LABEL);
+    if (founder.length === 0) return [];
+    const corridor = this.walkableTiles.filter((t) => labelAt(t.col, t.row) === null);
+    const distToFounder = (t: { col: number; row: number }) =>
+      Math.min(...founder.map((f) => Math.abs(f.col - t.col) + Math.abs(f.row - t.row)));
+    const doorway = corridor.filter((t) => distToFounder(t) === 1);
+    const midCol = doorway.length
+      ? doorway.reduce((n, t) => n + t.col, 0) / doorway.length
+      : founder.reduce((n, t) => n + t.col, 0) / founder.length;
+    return corridor
+      .map((t) => ({ t, d: distToFounder(t), m: Math.abs(t.col - midCol) }))
+      .filter((x) => x.d <= 4)
+      .sort((a, b) => a.d - b.d || a.m - b.m)
+      .map((x) => x.t);
   }
 
   /** Walk to the Founder area to talk. Only one character talks at a time. */
   private startTalking(ch: Character, toolId: string): void {
-    for (const other of this.characters.values()) {
-      if (other !== ch && other.talkTarget && other.visitSec <= 0) this.leaveFounderArea(other);
+    if (this.voiceWaiting.has(ch.id) && this.voiceSpeakingId !== ch.id) {
+      // Asked for the mic but someone else has it: stay in line (setVoiceQueue walks it in later).
+      ch.talkToolId = toolId;
+      ch.talkLingerSec = 0;
+      return;
     }
+    for (const other of this.characters.values()) {
+      if (other === ch || !other.talkTarget || other.visitSec > 0 || other.inVoiceLine) continue;
+      if (other.id === this.voiceSpeakingId) continue; // the server says they still have the mic
+      this.leaveFounderArea(other);
+    }
+    ch.inVoiceLine = false;
     if (ch.visitSec > 0) {
       // Talking to the user beats a visit: go to the Founder area instead.
       ch.visitSec = 0;
@@ -952,6 +1035,7 @@ export class OfficeState {
     ch.talkToolId = null;
     ch.talkLingerSec = 0;
     ch.visitSec = 0;
+    ch.inVoiceLine = false;
     if (!ch.talkTarget) return;
     ch.talkTarget = null;
     this.sendToSeat(ch.id);
@@ -1331,7 +1415,7 @@ export class OfficeState {
 
   update(dt: number): void {
     for (const ch of this.characters.values()) {
-      if (ch.talkTarget && ch.talkToolId === null && ch.talkLingerSec > 0) {
+      if (ch.talkTarget && ch.talkToolId === null && ch.talkLingerSec > 0 && !ch.inVoiceLine) {
         ch.talkLingerSec -= dt;
         if (ch.talkLingerSec <= 0) this.leaveFounderArea(ch);
       }

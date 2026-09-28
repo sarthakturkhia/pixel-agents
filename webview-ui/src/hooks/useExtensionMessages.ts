@@ -410,6 +410,11 @@ export function useExtensionMessages(
             return [...prev, { id: subId, parentAgentId: id, parentToolId: toolId, label }];
           });
         }
+      } else if (msg.type === 'voiceQueue') {
+        os.setVoiceQueue(
+          (msg.speakingId as number | null) ?? null,
+          (msg.waiting as Array<{ id: number; position: number }>) ?? [],
+        );
       } else if (msg.type === 'agentToolDone') {
         const id = msg.id as number;
         const toolId = msg.toolId as string;

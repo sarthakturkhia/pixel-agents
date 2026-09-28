@@ -300,6 +300,7 @@ async function main(): Promise<void> {
       runtime.startProjectScan(projectDir);
       runtime.startExternalScanning(projectDir);
       runtime.startStaleCheck();
+      runtime.startVoiceQueueWatch();
     }
 
     // The URL the operator opens has to be REACHABLE (a wildcard bind address

@@ -191,6 +191,8 @@ export interface Character {
   /** Seconds left in a visit to another agent's room after messaging it (0 = not visiting).
    *  While visiting, talkTarget holds the spot at the edge of that room. */
   visitSec: number;
+  /** True while waiting in line for the voice channel (VoiceMode's queue); talkTarget is its spot in line. */
+  inVoiceLine: boolean;
   /** Palette index (0-5) */
   palette: number;
   /** Hue shift in degrees (0 = no shift, ≥45 for repeated palettes) */

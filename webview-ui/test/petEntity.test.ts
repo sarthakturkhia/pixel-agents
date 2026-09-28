@@ -71,6 +71,7 @@ function makeChar(id: number, col: number, row: number): Character {
     talkToolId: null,
     talkLingerSec: 0,
     visitSec: 0,
+    inVoiceLine: false,
     palette: 0,
     hueShift: 0,
     frame: 0,

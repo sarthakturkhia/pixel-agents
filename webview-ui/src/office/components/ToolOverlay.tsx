@@ -139,7 +139,16 @@ export function ToolOverlay({
         // Only show for hovered or selected agents (unless always-show is on).
         // Whoever is talking to the user always shows it.
         const isTalking = officeState.isTalking(id);
-        if (!alwaysShowOverlay && !isSelected && !isHovered && !isTalking) return null;
+        const linePosition = officeState.voiceLinePosition(id);
+        if (
+          !alwaysShowOverlay &&
+          !isSelected &&
+          !isHovered &&
+          !isTalking &&
+          linePosition === null
+        ) {
+          return null;
+        }
 
         // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
@@ -153,7 +162,7 @@ export function ToolOverlay({
         // panel back. When always-show is off, the early return above already
         // keeps the panel hidden for idle agents.
         const isDone = ch.bubbleType === 'waiting' && !ch.waitingAwaitingInput;
-        if (isDone && !isSelected && !isHovered) {
+        if (isDone && !isSelected && !isHovered && linePosition === null) {
           return (
             <div
               key={id}
@@ -169,7 +178,10 @@ export function ToolOverlay({
         const hasWaitingBubble = ch.bubbleType === 'waiting';
         const subHasPermission = isSub && ch.bubbleType === 'permission';
         let activityText: string;
-        if (hasWaitingBubble && ch.waitingAwaitingInput) {
+        if (linePosition !== null && ch.bubbleType !== 'permission') {
+          // Heard its name / asked for the mic, and is waiting its turn to talk to the founder.
+          activityText = `\u{1F442} Heard you \u00B7 #${linePosition} in line`;
+        } else if (hasWaitingBubble && ch.waitingAwaitingInput) {
           // Idle, waiting on the user -> dedicated label. A finished turn (Stop)
           // shows only the checkmark and falls through to the normal idle text.
           activityText = WAITING_INPUT_ACTIVITY_TEXT;

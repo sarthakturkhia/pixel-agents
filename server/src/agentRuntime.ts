@@ -48,6 +48,7 @@ import {
   setTeamSwitchCallback,
 } from './transcriptParser.js';
 import type { AgentState } from './types.js';
+import { readVoiceQueueFiles, toVoiceQueue } from './voiceQueueWatcher.js';
 
 /** Callbacks that adapters register for platform-specific behavior. */
 export interface RuntimeLifecycleCallbacks {
@@ -73,6 +74,7 @@ export class AgentRuntime {
   readonly activeAgentId = { current: null as number | null };
   private externalScanTimer: ReturnType<typeof setInterval> | null = null;
   private staleCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private voiceQueueTimer: ReturnType<typeof setInterval> | null = null;
 
   // Configuration refs (mutable, shared with scanners)
   readonly watchAllSessions = { current: false };
@@ -449,6 +451,30 @@ export class AgentRuntime {
     );
   }
 
+  /**
+   * Watch VoiceMode's mic lock and queue (see voiceQueueWatcher.ts) and tell
+   * clients who is speaking and who is waiting. Broadcasts on change, and every
+   * 5 s so a newly opened tab catches up.
+   */
+  startVoiceQueueWatch(): void {
+    if (this.voiceQueueTimer) return;
+    let last = '';
+    let lastSentAt = 0;
+    let consumedWakeAt: number | null = null;
+    this.voiceQueueTimer = setInterval(() => {
+      const now = Date.now();
+      const files = readVoiceQueueFiles();
+      // A wake ping is used up once its agent gets the mic.
+      if (files.wake && files.speakingPath === files.wake.path) consumedWakeAt = files.wake.at;
+      const msg = toVoiceQueue(files, this.store.values(), now, consumedWakeAt);
+      const key = JSON.stringify(msg);
+      if (key === last && now - lastSentAt < 5000) return;
+      last = key;
+      lastSentAt = now;
+      this.store.broadcast({ ...msg });
+    }, 700);
+  }
+
   // ── Restore persisted external agents (standalone) ──
 
   /**
@@ -572,6 +598,10 @@ export class AgentRuntime {
     if (this.staleCheckTimer) {
       clearInterval(this.staleCheckTimer);
       this.staleCheckTimer = null;
+    }
+    if (this.voiceQueueTimer) {
+      clearInterval(this.voiceQueueTimer);
+      this.voiceQueueTimer = null;
     }
 
     for (const id of [...this.store.keys()]) {

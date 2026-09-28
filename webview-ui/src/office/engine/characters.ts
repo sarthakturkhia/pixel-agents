@@ -70,6 +70,7 @@ export function createCharacter(
     currentTool: null,
     talkTarget: null,
     visitSec: 0,
+    inVoiceLine: false,
     talkToolId: null,
     talkLingerSec: 0,
     palette,

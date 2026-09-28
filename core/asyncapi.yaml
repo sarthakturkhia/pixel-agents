@@ -88,6 +88,7 @@ components:
         - $ref: '#/components/schemas/AgentStatus'
         - $ref: '#/components/schemas/AgentToolStart'
         - $ref: '#/components/schemas/AgentToolDone'
+        - $ref: '#/components/schemas/VoiceQueue'
         - $ref: '#/components/schemas/AgentToolsClear'
         - $ref: '#/components/schemas/AgentToolPermission'
         - $ref: '#/components/schemas/AgentToolPermissionClear'
@@ -307,6 +308,36 @@ components:
           type: integer
         toolId:
           type: string
+
+    VoiceQueue:
+      description: |
+        Who holds the voice channel and who is waiting for it (VoiceMode's conch and its
+        queue, plus a desk just woken by a wake word). The speaker walks into the Founder
+        area; waiting agents line up outside it with a "heard you" label.
+      type: object
+      additionalProperties: false
+      required: [type, speakingId, waiting]
+      properties:
+        type:
+          const: voiceQueue
+        speakingId:
+          type: [integer, 'null']
+        waiting:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoiceQueueWaiter'
+
+    VoiceQueueWaiter:
+      description: An agent waiting for the voice channel.
+      type: object
+      additionalProperties: false
+      required: [id, position]
+      properties:
+        id:
+          type: integer
+        position:
+          type: integer
+          description: 1 = next in line.
 
     AgentToolsClear:
       description: All foreground tools cleared (turn end). Background agents preserved.

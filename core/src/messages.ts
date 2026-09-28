@@ -16,6 +16,7 @@ export type ServerMessage =
   | AgentStatus
   | AgentToolStart
   | AgentToolDone
+  | VoiceQueue
   | AgentToolsClear
   | AgentToolPermission
   | AgentToolPermissionClear
@@ -127,6 +128,17 @@ export interface AgentToolDone {
   type: 'agentToolDone';
   id: number;
   toolId: string;
+}
+
+export interface VoiceQueue {
+  type: 'voiceQueue';
+  speakingId: number | null;
+  waiting: VoiceQueueWaiter[];
+}
+
+export interface VoiceQueueWaiter {
+  id: number;
+  position: number;
 }
 
 export interface AgentToolsClear {
