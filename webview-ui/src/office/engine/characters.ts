@@ -111,7 +111,7 @@ function activeTarget(
 export function updateCharacter(
   ch: Character,
   dt: number,
-  walkableTiles: Array<{ col: number; row: number }>,
+  _walkableTiles: Array<{ col: number; row: number }>, // unused since idle agents stopped wandering
   seats: Map<string, Seat>,
   tileMap: TileTypeVal[][],
   blockedTiles: Set<string>,
@@ -120,6 +120,13 @@ export function updateCharacter(
 
   switch (ch.state) {
     case CharacterState.TYPE: {
+      // Idle at the desk: sit still (no typing), and stay seated instead of wandering off.
+      if (!ch.isActive && ch.seatId && !ch.talkTarget) {
+        ch.frame = 0;
+        ch.frameTimer = 0;
+        ch.seatTimer = 0;
+        break;
+      }
       if (ch.frameTimer >= TYPE_FRAME_DURATION_SEC) {
         ch.frameTimer -= TYPE_FRAME_DURATION_SEC;
         ch.frame = (ch.frame + 1) % 2;
@@ -180,38 +187,24 @@ export function updateCharacter(
         }
         break;
       }
-      // Countdown wander timer
-      ch.wanderTimer -= dt;
-      if (ch.wanderTimer <= 0) {
-        // Check if we've wandered enough — return to seat for a rest
-        if (ch.wanderCount >= ch.wanderLimit && ch.seatId) {
-          const seat = seats.get(ch.seatId);
-          if (seat) {
-            const path = findPath(
-              ch.tileCol,
-              ch.tileRow,
-              seat.seatCol,
-              seat.seatRow,
-              tileMap,
-              blockedTiles,
-            );
-            if (path.length > 0) {
-              ch.path = path;
-              ch.moveProgress = 0;
-              ch.state = CharacterState.WALK;
-              ch.frame = 0;
-              ch.frameTimer = 0;
-              break;
-            }
+      // Idle: no wandering. Somewhere on purpose (visiting a room, in line for the mic)? Stay.
+      if (ch.talkTarget) break;
+      // Otherwise go back to the desk and sit down.
+      if (ch.seatId) {
+        const seat = seats.get(ch.seatId);
+        if (seat) {
+          if (ch.tileCol === seat.seatCol && ch.tileRow === seat.seatRow) {
+            ch.state = CharacterState.TYPE;
+            ch.dir = seat.facingDir;
+            ch.frame = 0;
+            ch.frameTimer = 0;
+            break;
           }
-        }
-        if (walkableTiles.length > 0) {
-          const target = walkableTiles[Math.floor(Math.random() * walkableTiles.length)];
           const path = findPath(
             ch.tileCol,
             ch.tileRow,
-            target.col,
-            target.row,
+            seat.seatCol,
+            seat.seatRow,
             tileMap,
             blockedTiles,
           );
@@ -221,10 +214,8 @@ export function updateCharacter(
             ch.state = CharacterState.WALK;
             ch.frame = 0;
             ch.frameTimer = 0;
-            ch.wanderCount++;
           }
         }
-        ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
       }
       break;
     }
