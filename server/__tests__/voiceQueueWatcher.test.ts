@@ -32,7 +32,12 @@ describe('voiceQueueWatcher', () => {
 
   it('reports nobody when there are no files', () => {
     fs.rmSync(path.join(home, '.voicemode'), { recursive: true });
-    expect(readVoiceQueueFiles(home)).toEqual({ speakingPath: null, waitingPaths: [], wake: null });
+    expect(readVoiceQueueFiles(home)).toEqual({
+      speakingPath: null,
+      waitingPaths: [],
+      wake: null,
+      standup: false,
+    });
   });
 
   it('reads the holder and orders waiters by seq', () => {
@@ -52,6 +57,7 @@ describe('voiceQueueWatcher', () => {
     expect(files.waitingPaths).toEqual([`${REPO}/finance`, `${REPO}/marketing`]);
     expect(toVoiceQueue(files, agents, Date.now(), null)).toEqual({
       type: 'voiceQueue',
+      standup: false,
       speakingId: 1,
       waiting: [
         { id: 2, position: 1 },
@@ -95,6 +101,22 @@ describe('voiceQueueWatcher', () => {
       speakingId: 2,
       waiting: [],
     });
+  });
+});
+
+describe('stand-up flag', () => {
+  it('is on while standup.json is active and not past its end', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'vq-'));
+    fs.mkdirSync(path.join(home, '.pixel-agents'), { recursive: true });
+    const f = path.join(home, '.pixel-agents', 'standup.json');
+    const now = Date.now();
+    fs.writeFileSync(f, JSON.stringify({ active: true, until: now + 60_000 }));
+    expect(readVoiceQueueFiles(home, now).standup).toBe(true);
+    fs.writeFileSync(f, JSON.stringify({ active: true, until: now - 1 }));
+    expect(readVoiceQueueFiles(home, now).standup).toBe(false);
+    fs.writeFileSync(f, JSON.stringify({ active: false }));
+    expect(readVoiceQueueFiles(home, now).standup).toBe(false);
+    fs.rmSync(home, { recursive: true, force: true });
   });
 });
 

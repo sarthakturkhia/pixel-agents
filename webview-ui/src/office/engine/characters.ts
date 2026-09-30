@@ -71,6 +71,7 @@ export function createCharacter(
     talkTarget: null,
     visitSec: 0,
     inVoiceLine: false,
+    inStandup: false,
     talkToolId: null,
     talkLingerSec: 0,
     palette,

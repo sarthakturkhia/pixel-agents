@@ -414,6 +414,7 @@ export function useExtensionMessages(
         os.setVoiceQueue(
           (msg.speakingId as number | null) ?? null,
           (msg.waiting as Array<{ id: number; position: number }>) ?? [],
+          msg.standup === true,
         );
       } else if (msg.type === 'agentToolDone') {
         const id = msg.id as number;

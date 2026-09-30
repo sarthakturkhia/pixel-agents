@@ -320,6 +320,9 @@ components:
       properties:
         type:
           const: voiceQueue
+        standup:
+          type: boolean
+          description: A stand-up is on. Everyone gathers in the Conference area and speaks there.
         speakingId:
           type: [integer, 'null']
         waiting:

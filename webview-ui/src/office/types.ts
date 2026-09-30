@@ -193,6 +193,8 @@ export interface Character {
   visitSec: number;
   /** True while waiting in line for the voice channel (VoiceMode's queue); talkTarget is its spot in line. */
   inVoiceLine: boolean;
+  /** True while gathered in the Conference area for a stand-up; talkTarget is its spot there. */
+  inStandup: boolean;
   /** Palette index (0-5) */
   palette: number;
   /** Hue shift in degrees (0 = no shift, ≥45 for repeated palettes) */

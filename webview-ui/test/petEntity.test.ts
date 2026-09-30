@@ -72,6 +72,7 @@ function makeChar(id: number, col: number, row: number): Character {
     talkLingerSec: 0,
     visitSec: 0,
     inVoiceLine: false,
+    inStandup: false,
     palette: 0,
     hueShift: 0,
     frame: 0,

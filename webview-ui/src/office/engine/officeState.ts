@@ -56,6 +56,8 @@ function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } 
 
 /** Area label (any case) where characters stand while talking to the user. */
 const FOUNDER_AREA_LABEL = 'founder';
+/** Area label (any case) where everyone gathers during a stand-up. */
+const CONFERENCE_AREA_LABEL = 'conference';
 /** Area label (any case) for sub-agents and sessions whose folder has no Area of its own. */
 const HELPERS_AREA_LABEL = 'helpers';
 
@@ -908,7 +910,7 @@ export class OfficeState {
     if (ch.isSubagent || tool === null) return;
     if (isVoiceToolName(tool)) {
       this.startTalking(ch, toolId ?? tool);
-    } else if (ch.talkTarget && ch.visitSec <= 0 && !ch.inVoiceLine) {
+    } else if (ch.talkTarget && ch.visitSec <= 0 && !ch.inVoiceLine && !ch.inStandup) {
       // Back to other work: head straight back to the desk. (A visit plays out on its own timer.)
       this.leaveFounderArea(ch);
     }
@@ -944,7 +946,19 @@ export class OfficeState {
    * Founder area; when one gets the mic it walks in; when it drops out of line
    * without speaking, it goes back to its desk.
    */
-  setVoiceQueue(speakingId: number | null, waiting: Array<{ id: number; position: number }>): void {
+  setVoiceQueue(
+    speakingId: number | null,
+    waiting: Array<{ id: number; position: number }>,
+    standup = false,
+  ): void {
+    if (standup || this.standupActive) {
+      this.setStandup(standup, speakingId);
+      if (standup) {
+        this.voiceSpeakingId = speakingId;
+        this.voiceWaiting = new Map(waiting.map((w) => [w.id, w.position]));
+        return;
+      }
+    }
     const before = new Set(this.voiceWaiting.keys());
     this.voiceSpeakingId = speakingId;
     this.voiceWaiting = new Map(waiting.map((w) => [w.id, w.position]));
@@ -971,6 +985,42 @@ export class OfficeState {
         ch.talkTarget = null;
         this.startTalking(ch, ch.talkToolId);
       } else if (id !== speakingId) {
+        this.leaveFounderArea(ch);
+      }
+    }
+  }
+
+  private standupActive = false;
+
+  /**
+   * Stand-up on: every agent (not sub-agents) walks to a free spot in the Conference area and stays
+   * there, talking from that spot when its turn comes. Stand-up off: everyone goes back to their
+   * desk, except whoever is mid-conversation with the founder, who goes to the Founder area.
+   */
+  private setStandup(on: boolean, speakingId: number | null): void {
+    if (on) {
+      this.standupActive = true;
+      for (const ch of this.characters.values()) {
+        if (ch.isSubagent || ch.inStandup) continue;
+        const spot = this.findFreeTileInArea(CONFERENCE_AREA_LABEL, ch);
+        if (!spot) continue;
+        ch.visitSec = 0;
+        ch.inVoiceLine = false;
+        ch.inStandup = true;
+        ch.talkTarget = spot;
+        this.walkToTile(ch.id, spot.col, spot.row);
+      }
+      return;
+    }
+    if (!this.standupActive) return;
+    this.standupActive = false;
+    for (const ch of this.characters.values()) {
+      if (!ch.inStandup) continue;
+      ch.inStandup = false;
+      if (ch.id === speakingId && ch.talkToolId !== null) {
+        ch.talkTarget = null;
+        this.startTalking(ch, ch.talkToolId);
+      } else {
         this.leaveFounderArea(ch);
       }
     }
@@ -1004,6 +1054,12 @@ export class OfficeState {
 
   /** Walk to the Founder area to talk. Only one character talks at a time. */
   private startTalking(ch: Character, toolId: string): void {
+    if (ch.inStandup) {
+      // Stand-up: everyone talks from their spot in the Conference area.
+      ch.talkToolId = toolId;
+      ch.talkLingerSec = 0;
+      return;
+    }
     if (this.voiceWaiting.has(ch.id) && this.voiceSpeakingId !== ch.id) {
       // Asked for the mic but someone else has it: stay in line (setVoiceQueue walks it in later).
       ch.talkToolId = toolId;
@@ -1011,7 +1067,14 @@ export class OfficeState {
       return;
     }
     for (const other of this.characters.values()) {
-      if (other === ch || !other.talkTarget || other.visitSec > 0 || other.inVoiceLine) continue;
+      if (
+        other === ch ||
+        !other.talkTarget ||
+        other.visitSec > 0 ||
+        other.inVoiceLine ||
+        other.inStandup
+      )
+        continue;
       if (other.id === this.voiceSpeakingId) continue; // the server says they still have the mic
       this.leaveFounderArea(other);
     }
@@ -1036,6 +1099,7 @@ export class OfficeState {
     ch.talkLingerSec = 0;
     ch.visitSec = 0;
     ch.inVoiceLine = false;
+    ch.inStandup = false;
     if (!ch.talkTarget) return;
     ch.talkTarget = null;
     this.sendToSeat(ch.id);
@@ -1415,7 +1479,13 @@ export class OfficeState {
 
   update(dt: number): void {
     for (const ch of this.characters.values()) {
-      if (ch.talkTarget && ch.talkToolId === null && ch.talkLingerSec > 0 && !ch.inVoiceLine) {
+      if (
+        ch.talkTarget &&
+        ch.talkToolId === null &&
+        ch.talkLingerSec > 0 &&
+        !ch.inVoiceLine &&
+        !ch.inStandup
+      ) {
         ch.talkLingerSec -= dt;
         if (ch.talkLingerSec <= 0) this.leaveFounderArea(ch);
       }

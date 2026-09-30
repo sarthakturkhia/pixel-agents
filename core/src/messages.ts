@@ -132,6 +132,7 @@ export interface AgentToolDone {
 
 export interface VoiceQueue {
   type: 'voiceQueue';
+  standup?: boolean;
   speakingId: number | null;
   waiting: VoiceQueueWaiter[];
 }

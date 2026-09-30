@@ -27,6 +27,8 @@ export interface VoiceQueueFiles {
   waitingPaths: string[];
   /** Latest wake-word ping, if any. */
   wake: { path: string; at: number } | null;
+  /** A stand-up is on (~/.pixel-agents/standup.json with active: true and `until` in the future). */
+  standup?: boolean;
 }
 
 function readJson(file: string): Record<string, unknown> | null {
@@ -90,7 +92,11 @@ export function readVoiceQueueFiles(home = os.homedir(), nowMs = Date.now()): Vo
     wake = { path: ping.project_path, at: ping.at };
   }
 
-  return { speakingPath, waitingPaths: waiters.map((w) => w.path), wake };
+  const su = readJson(path.join(home, '.pixel-agents', 'standup.json'));
+  const standup =
+    !!su && su.active === true && (typeof su.until !== 'number' || (su.until as number) > nowMs);
+
+  return { speakingPath, waitingPaths: waiters.map((w) => w.path), wake, standup };
 }
 
 /** Claude Code names a session's project dir after its folder, with every non-alphanumeric as '-'. */
@@ -129,6 +135,7 @@ export function toVoiceQueue(
   }
   return {
     type: 'voiceQueue',
+    standup: files.standup === true,
     speakingId,
     waiting: order.map((id, i) => ({ id, position: i + 1 })),
   };
