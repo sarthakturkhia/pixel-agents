@@ -13,6 +13,14 @@ export interface AdapterSettings {
   hooksInfoShown: boolean;
   showAreas: boolean;
   areaMappings: Record<string, string[]>;
+  /** Fixed character per project folder: { "admin": { palette: 1, hueShift: 0 } }. Folders without
+   *  an entry get the usual diverse pick (paletteAssigner). */
+  characterMappings: Record<string, CharacterMapping>;
+}
+
+export interface CharacterMapping {
+  palette: number;
+  hueShift?: number;
 }
 
 /** All keys in AdapterSettings. Used by adapters to map `pixel-agents.foo` → `foo`.
@@ -28,6 +36,7 @@ export const ADAPTER_SETTING_KEYS = [
   'hooksInfoShown',
   'showAreas',
   'areaMappings',
+  'characterMappings',
 ] as const;
 
 export type AdapterSettingKey = (typeof ADAPTER_SETTING_KEYS)[number];
@@ -64,6 +73,7 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   hooksInfoShown: false,
   showAreas: false,
   areaMappings: {},
+  characterMappings: {},
 };
 
 function getConfigFilePath(): string {
@@ -145,7 +155,22 @@ function parseAdapterSettings(raw: unknown): AdapterSettings {
     showAreas:
       typeof obj.showAreas === 'boolean' ? obj.showAreas : DEFAULT_ADAPTER_SETTINGS.showAreas,
     areaMappings: parseAreaMappings(obj.areaMappings),
+    characterMappings: parseCharacterMappings(obj.characterMappings),
   };
+}
+
+export function parseCharacterMappings(raw: unknown): Record<string, CharacterMapping> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, CharacterMapping> = {};
+  for (const [folder, value] of Object.entries(raw as Record<string, unknown>)) {
+    const v = value as { palette?: unknown; hueShift?: unknown } | null;
+    if (!v || typeof v !== 'object' || !Number.isInteger(v.palette) || (v.palette as number) < 0)
+      continue;
+    out[folder] = { palette: v.palette as number };
+    if (Number.isInteger(v.hueShift) && (v.hueShift as number) >= 0)
+      out[folder].hueShift = v.hueShift as number;
+  }
+  return out;
 }
 
 export function readConfig(): PixelAgentsConfig {

@@ -7,6 +7,7 @@
 
 import { pickDiversePalette } from '../../core/src/paletteUtils.js';
 import type { AgentStateStore } from './agentStateStore.js';
+import { type CharacterMapping, readConfig } from './configPersistence.js';
 import { PALETTE_COUNT } from './constants.js';
 import type { AgentState } from './types.js';
 
@@ -33,6 +34,12 @@ export function setPaletteCount(count: number): void {
  * @param store - The agent state store (used to count existing palettes)
  */
 export function assignPaletteIfNeeded(agent: AgentState, store: AgentStateStore): void {
+  const mapped = characterMappingFor(agent.projectDir);
+  if (mapped && mapped.palette < currentPaletteCount) {
+    agent.palette = mapped.palette;
+    agent.hueShift = mapped.hueShift ?? 0;
+    return;
+  }
   if (agent.palette !== undefined) return;
 
   const count = currentPaletteCount;
@@ -46,4 +53,23 @@ export function assignPaletteIfNeeded(agent: AgentState, store: AgentStateStore)
   const pick = pickDiversePalette(count, paletteCounts);
   agent.palette = pick.palette;
   agent.hueShift = pick.hueShift;
+}
+
+/**
+ * The fixed character for an agent's project folder, from `characterMappings` in config.json
+ * (keys are folder names, like `areaMappings`). Claude names a session's project dir after its
+ * folder path with every non-alphanumeric turned into '-', so a key matches when the dir's
+ * name ends in "-<key>". Longest key wins.
+ */
+export function characterMappingFor(projectDir: string | undefined): CharacterMapping | undefined {
+  if (!projectDir) return undefined;
+  const mappings = readConfig().standalone.characterMappings;
+  const base = projectDir.split(/[\\/]/).pop() ?? '';
+  let best: string | undefined;
+  for (const key of Object.keys(mappings)) {
+    const enc = key.replace(/[^a-zA-Z0-9]/g, '-');
+    if ((base === enc || base.endsWith(`-${enc}`)) && (!best || key.length > best.length))
+      best = key;
+  }
+  return best ? mappings[best] : undefined;
 }
